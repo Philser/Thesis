@@ -1,0 +1,197 @@
+service(variables, functionCode, constantsMap, path_to_context_file, path_to_public_key, levelThreshold) ::=
+<<
+#include "he_functions.h"
+
+Ctxt perform_operation(vector<string> string_ctxts, FHEPubKey publicKey);
+FHEcontext read_context_from_file(string filename);
+FHEPubKey read_public_key_from_file(FHEcontext* context, string filename);
+void print_context_info(FHEcontext* context, ZZX G);
+void convert_string_to_ctxt(string value, Ctxt& ctxt);
+void convert_ctxt_to_string(Ctxt& ctxt, string& target_string);
+
+bool dry = false;
+
+unsigned long p = 2;
+
+unsigned long r = 16;
+
+long d = 1;
+
+long c = 2;
+
+long k = 80;
+
+long L = 0;
+
+long s = 0;
+
+long repeat = 1;
+
+long chosen_m = 0;
+
+unsigned long m = 0;
+
+long w = 64;
+
+Vec<long> mvec;
+
+vector<long> gens;
+
+vector<long> ords;
+
+long seed = 0;
+
+long nt = 1;
+
+long seqCount = 3;
+
+long R = seqCount;
+
+string calculate (vector<string> string_ctxts) {
+
+
+  /*   if (L == 0) { // determine L based on R,r
+		cout << "Determining L automatically..." << endl;
+		L = 3 * R + 3;
+		if (p>2 || r>1) { // add some more primes for each round
+			long addPerRound = 2 * ceil(log((double)p)*r * 3) / (log(2.0)*FHE_p2Size) + 1;
+			L += R * addPerRound;
+		}
+		cout << "Set L to " << L << endl;
+	}
+
+	if (mvec.length()>0)
+		chosen_m = computeProd(mvec);
+	m = FindM(k, L, c, p, d, s, chosen_m, true);
+*/
+
+	vector<long> gens1, ords1;
+	convert(gens1, gens);
+	convert(ords1, ords);
+
+	//FHEcontext context = read_context_from_file("$path_to_context_file$");
+	double t_all = -GetTime();
+	string filename = "$path_to_context_file$";
+	cout << "Reading context from file " << filename << endl;
+	ifstream myfile;
+	myfile.open(filename, ios::in | ios::binary);
+	readContextBaseBinary(myfile, m, p, r, gens, ords);
+	FHEcontext context(m, p, r, gens, ords);
+	readContextBinary(myfile, context);
+	myfile.close();
+	cout << "Done." << endl;
+
+	ZZX G;
+	if (d == 0)
+		G = context.alMod.getFactorsOverZZ()[0];
+	else
+		G = makeIrredPoly(p, d);
+
+	print_context_info(&context, G);
+
+	//const FHEPubKey& publicKey = read_public_key_from_file(&context, "$path_to_public_key$");
+	cout << "Reading pubKey from file " << "$path_to_public_key$" << endl;
+	ifstream pfile;
+	pfile.open("$path_to_public_key$", ios::binary);
+	FHEPubKey pubKey(context);
+	readPubKeyBinary(pfile, pubKey);
+	pfile.close();
+
+
+
+    cout << "Finished setup." << endl;
+
+	cout << "Number of values given: " << string_ctxts.size() << endl;
+
+	double t_calc = -GetTime();
+	Ctxt result = perform_operation(string_ctxts, pubKey);
+	t_calc += GetTime();
+	cout << "Calculation time: " << t_calc << endl;
+
+	cout << "Calculation done." << endl;
+
+	t_all += GetTime();
+	cout << "Total time: " << t_all << endl;
+	string result_string = "";
+	convert_ctxt_to_string(result, result_string);
+	return result_string;
+}
+
+Ctxt perform_operation(vector<string> string_ctxts, FHEPubKey publicKey) {
+	
+	long recryptThreshold = $levelThreshold$;
+	double firstL = 0.0;
+	double secondL = 0.0;
+
+	Ctxt $variables:{c | $ciphertext_declaration(c)$}; separator=", "$;
+	
+	$constantsMap.keys:{key | $init_constants(key, constantsMap.(key))$}; separator="\n"$
+
+	$variables:{c | $convert_string_ctxts(c, i)$}; separator="\n"$
+
+	cout << "Calculating..." << endl;
+	$functionCode$
+
+}
+
+FHEcontext read_context_from_file(string filename) {
+	cout << "Reading context from file " << filename << endl;
+	ifstream myfile;
+	myfile.open(filename, ios::binary);
+	readContextBaseBinary(myfile, m, p, r, gens, ords);
+	FHEcontext context(m, p, r, gens, ords);
+	readContextBinary(myfile, context);
+	myfile.close();
+	cout << "Done." << endl;
+	return context;
+}
+
+FHEPubKey read_public_key_from_file(FHEcontext* context, string filename) {
+	cout << "Reading public key from " << filename << "... " << endl;
+	ifstream myfile;
+	//myfile.open(filename, ios::binary);
+	myfile.open(filename);
+	FHEPubKey pubKey((*context));
+	//readPubKeyBinary(myfile, pubKey);
+	myfile >\> pubKey;
+	myfile.close();
+	cout << "Done." << endl;
+
+	return pubKey;
+}
+
+void print_context_info(FHEcontext* context, ZZX G) {
+	context->zMStar.printout();
+    cout << endl;
+
+    cout << "security=" << context->securityLevel() << endl;
+    cout << "# ctxt primes = " << context->ctxtPrimes.card() << "\n";
+    cout << "# bits in ctxt primes = "
+        << long(context->logOfProduct(context->ctxtPrimes) / log(2.0) + 0.5) << "\n";
+    cout << "# special primes = " << context->specialPrimes.card() << "\n";
+    cout << "# bits in special primes = "
+        << long(context->logOfProduct(context->specialPrimes) / log(2.0) + 0.5) << "\n";
+    cout << "G = " << G << "\n";
+}
+
+void convert_string_to_ctxt(string value, Ctxt& ctxt) {
+    stringstream ss(value);
+    ss >\> ctxt;
+    ss.flush();
+}
+
+void convert_ctxt_to_string(Ctxt& ctxt, string& target_string) {
+	cout << "Converting ctxt to string ... " << endl;
+    stringstream ss;
+    ss << ctxt;
+    target_string = ss.str();
+    cout << "Done." << endl;
+}
+
+>>
+input_param(x) ::= "int $x$"
+ciphertext_declaration(c) ::= "$c$(publicKey)"
+declare_vars(x) ::= "int $x$ = 1;$\n$"
+extract_list(x, i) ::= "$x$ = values.at($i$);$\n$"
+convert_string_ctxts(c, i) ::= "cout << \"Converting $c$...\" << endl; convert_string_to_ctxt(string_ctxts.at($i$-1), $c$);"
+init_constants(constant_name, value) ::= "Ctxt $constant_name$(publicKey); publicKey.Encrypt($constant_name$, to_ZZX($value$));"

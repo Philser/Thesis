@@ -1,0 +1,486 @@
+service(variables, functionCode, constantsMap, path_to_context_file, path_to_public_key, levelThreshold) ::=
+<<
+#include "he_functions.h"
+
+Ctxt perform_operation(vector<string> string_ctxts, FHEPubKey publicKey);
+FHEcontext read_context_from_file(string filename);
+FHEPubKey read_public_key_from_file(FHEcontext* context, string filename);
+void print_context_info(FHEcontext* context, ZZX G);
+void convert_string_to_ctxt(string value, Ctxt& ctxt);
+void convert_ctxt_to_string(Ctxt& ctxt, string& target_string);
+string measure_avg(FHEPubKey pubKey, int peers);
+string measure_var(FHEPubKey pubKey, int peers);
+string measure_class2(FHEPubKey pubKey, int peers);
+
+bool dry = false;
+
+unsigned long p = 2;
+
+unsigned long r = 16;
+
+long d = 1;
+
+long c = 2;
+
+long k = 80;
+
+long L = 0;
+
+long s = 0;
+
+long repeat = 1;
+
+long chosen_m = 0;
+
+unsigned long m = 0;
+
+long w = 64;
+
+Vec<long> mvec;
+
+vector<long> gens;
+
+vector<long> ords;
+
+long seed = 0;
+
+long nt = 1;
+
+long seqCount = 3;
+
+long R = seqCount;
+
+static int scale = 0;
+
+static long mValues[][15] = {
+{  2, 26400, 27311, 55, 31, 881,  0, 21145,  1830,    0, 30, 16,   0, 300, 800}, // m=31*(881) m/phim(m)=1.03      C=99  D=2 E=0
+{  2, 31104, 35113, 36, 37, 949,  0, 16134,  8548,    0, 36, 24,   0, 300, 800},
+{  2, 34848, 45655, 44, 23, 1985, 0, 33746, 27831,    0, 22, 36,   0, 300, 800} // m=(13)*37*{73} m/phim(m)=1.12  C=94  D=2 E=2
+};
+
+string measure() {
+	srand(time(NULL));
+	string measurements_var = "";
+	string measurements_avg = "";
+	string measurements_class2 = "";
+	for(int it = 2; it < 3; it++) {
+		long L = mValues[it][14];
+		unsigned long c = 3;
+		long m = mValues[it][2];
+
+		vector<long> gens;
+	  vector<long> ords;
+	  Vec<long> mvec;
+	  append(mvec, mValues[it][4]);
+	  if (mValues[it][5]>1) append(mvec, mValues[it][5]);
+	  if (mValues[it][6]>1) append(mvec, mValues[it][6]);
+	  gens.push_back(mValues[it][7]);
+	  if (mValues[it][8]>1) gens.push_back(mValues[it][8]);
+	  if (mValues[it][9]>1) gens.push_back(mValues[it][9]);
+	  ords.push_back(mValues[it][10]);
+	  if (abs(mValues[it][11])>1) ords.push_back(mValues[it][11]);
+	  if (abs(mValues[it][12])>1) ords.push_back(mValues[it][12]);
+
+		cout << "Creating context for m=" << m << endl;
+
+	 FHEcontext context(m, p, r, gens, ords);
+	  if (scale) {
+	    context.scale = scale;
+	  }
+
+	  context.zMStar.set_cM(mValues[it][13]/100.0);
+	  buildModChain(context, L, c,/*willBeBootstrappable=*/true);
+	  context.makeBootstrappable(mvec, /*t=*/0, 0);
+
+	  FHESecKey secretKey(context);
+	  FHEPubKey& pubKey = secretKey;
+	  secretKey.GenSecKey();      // A +-1/0 secret key
+	  addSome1DMatrices(secretKey); // compute key-switching matrices that we need
+	  addFrbMatrices(secretKey);
+	  secretKey.genRecryptData();
+
+		cout << "Done." << endl;
+
+		ZZX G;
+		if (d == 0)
+			G = context.alMod.getFactorsOverZZ()[0];
+		else
+			G = makeIrredPoly(p, d);
+
+		print_context_info(&context, G);
+
+
+		string security = to_string(context.securityLevel());
+	    cout << "Finished setup." << endl;
+
+		cout << "########## Measuring average for 5 peers ##########" << endl;
+		string measurements_avg_5 = measure_avg(pubKey, 5);
+		cout << "Result: " << measurements_avg_5 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 10 peers ##########" << endl;
+		string measurements_avg_10 = measure_avg(pubKey, 10);
+		cout << "Result: " << measurements_avg_10 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 15 peers ##########" << endl;
+		string measurements_avg_15 = measure_avg(pubKey, 15);
+		cout << "Result: " << measurements_avg_15 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 20 peers ##########" << endl;
+		string measurements_avg_20 = measure_avg(pubKey, 20);
+		cout << "Result: " << measurements_avg_20 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 25 peers ##########" << endl;
+		string measurements_avg_25 = measure_avg(pubKey, 25);
+		cout << "Result: " << measurements_avg_25 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 50 peers ##########" << endl;
+		string measurements_avg_50 = measure_avg(pubKey, 50);
+		cout << "Result: " << measurements_avg_50 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 75 peers ##########" << endl;
+		string measurements_avg_75 = measure_avg(pubKey, 75);
+		cout << "Result: " << measurements_avg_75 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring average for 100 peers ##########" << endl;
+		string measurements_avg_100 = measure_avg(pubKey, 100);
+		cout << "Result: " << measurements_avg_100 << endl;
+		cout << "###################################################" << endl;
+		cout << "########## Measuring average for 125 peers ##########" << endl;
+		string measurements_avg_125 = measure_avg(pubKey, 125);
+		cout << "Result: " << measurements_avg_125 << endl;
+		cout << "###################################################" << endl;
+
+
+		cout << "########## Measuring class 2 for 5 peers ##########" << endl;
+		string measurements_class2_5 = measure_class2(pubKey, 5);
+		cout << "Result: " << measurements_class2_5 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 10 peers ##########" << endl;
+		string measurements_class2_10 = measure_class2(pubKey, 10);
+		cout << "Result: " << measurements_class2_10 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 15 peers ##########" << endl;
+		string measurements_class2_15 = measure_class2(pubKey, 15);
+		cout << "Result: " << measurements_class2_15 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 20 peers ##########" << endl;
+		string measurements_class2_20 = measure_class2(pubKey, 20);
+		cout << "Result: " << measurements_class2_20 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 25 peers ##########" << endl;
+		string measurements_class2_25 = measure_class2(pubKey, 25);
+		cout << "Result: " << measurements_class2_25 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 50 peers ##########" << endl;
+		string measurements_class2_50 = measure_class2(pubKey, 50);
+		cout << "Result: " << measurements_class2_50 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 75 peers ##########" << endl;
+		string measurements_class2_75 = measure_class2(pubKey, 50);
+		cout << "Result: " << measurements_class2_75 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 100 peers ##########" << endl;
+		string measurements_class2_100 = measure_class2(pubKey, 100);
+		cout << "Result: " << measurements_class2_100 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring class 2 for 125 peers ##########" << endl;
+		string measurements_class2_125 = measure_class2(pubKey, 125);
+		cout << "Result: " << measurements_class2_125 << endl;
+		cout << "###################################################" << endl;
+
+
+		/* cout << "########## Measuring variance for 5 peers ##########" << endl;
+		string measurements_var_5 = measure_var(pubKey, 5);
+		cout << "Result: " << measurements_var_5 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 10 peers ##########" << endl;
+		string measurements_var_10 = measure_var(pubKey, 10);
+		cout << "Result: " << measurements_var_10 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 15 peers ##########" << endl;
+		string measurements_var_15 = measure_var(pubKey, 15);
+		cout << "Result: " << measurements_var_15 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 20 peers ##########" << endl;
+		string measurements_var_20 = measure_var(pubKey, 20);
+		cout << "Result: " << measurements_var_20 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 25 peers ##########" << endl;
+		string measurements_var_25 = measure_var(pubKey, 25);
+		cout << "Result: " << measurements_var_25 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 50 peers ##########" << endl;
+		string measurements_var_50 = measure_var(pubKey, 50);
+		cout << "Result: " << measurements_var_50 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 75 peers ##########" << endl;
+		string measurements_var_75 = measure_var(pubKey, 75);
+		cout << "Result: " << measurements_var_75 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 100 peers ##########" << endl;
+		string measurements_var_100 = measure_var(pubKey, 100);
+		cout << "Result: " << measurements_var_100 << endl;
+		cout << "###################################################" << endl;
+
+		cout << "########## Measuring variance for 125 peers ##########" << endl;
+		string measurements_var_125 = measure_var(pubKey, 125);
+		cout << "Result: " << measurements_var_125 << endl;
+		cout << "###################################################" << endl;*/
+
+
+
+		measurements_avg +=
+		"op\tpeers\top_time\tsecurity\n" +
+		measurements_avg_5 + "\t" + security + "\n" +
+		measurements_avg_10 + "\t" + security + "\n" +
+		measurements_avg_15 + "\t" + security + "\n" +
+		measurements_avg_20 + "\t" + security + "\n" +
+		measurements_avg_25 + "\t" + security + "\n" +
+		measurements_avg_50 + "\t" + security + "\n" +
+		measurements_avg_75 + "\t" + security + "\n" +
+		measurements_avg_100 + "\t" + security + "\n" +
+		measurements_avg_125 + "\t" + security + "\n";
+
+		/* measurements_var +=
+		"op\tpeers\tbootstrap_count\tbootstrap_time\top_time\tsecurity\n" +
+		measurements_var_5 + "\t" + security + "\n" +
+		measurements_var_10 + "\t" + security + "\n" +
+		measurements_var_15 + "\t" + security + "\n" +
+		measurements_var_20 + "\t" + security + "\n" +
+		measurements_var_25 + "\t" + security + "\n" +
+		measurements_var_50 + "\t" + security + "\n" +
+		measurements_var_75 + "\t" + security + "\n" +
+		measurements_var_100 + "\t" + security + "\n" +
+		measurements_var_125 + "\t" + security + "\n";*/
+
+		measurements_class2 +=
+		"op\tpeers\tbootstrap_count\tbootstrap_time\top_time\tsecurity\n" +
+		 measurements_class2_5 + "\t" + security + "\n" +
+		measurements_class2_10 + "\t" + security + "\n" +
+		measurements_class2_15 + "\t" + security + "\n" +
+		measurements_class2_20 + "\t" + security + "\n" +
+		measurements_class2_25 + "\t" + security + "\n" +
+		measurements_class2_50 + "\t" + security + "\n" +
+		measurements_class2_75 + "\t" + security + "\n" +
+		measurements_class2_100 + "\t" + security + "\n" +
+		measurements_class2_125 + "\t" + security + "\n";
+	}
+
+	return measurements_avg + "\n" + measurements_class2 + "\n" + measurements_var;
+}
+
+string measure_avg(FHEPubKey pubKey, int peers) {
+	
+	string out = "";
+	for(int j = 0; j < 3; j++) {
+		out += "\n";
+		double recryptThreshold = 70.0;
+		double firstL = 0.0;
+		double secondL = 0.0;
+		Ctxt c2(pubKey);
+		pubKey.Encrypt(c2, to_ZZX((rand() % 1000)));
+
+		Ctxt c1(pubKey);
+		pubKey.Encrypt(c1, to_ZZX(1));
+
+		int i = peers;
+		double t = 0.0;
+
+		while(i > 0) {
+			t -= GetTime();
+			c2.addCtxt(c1);
+			t += GetTime();
+			i--;
+		}
+
+		out += "avg\t" +
+			to_string(peers) + "\t" +
+			to_string(t);
+	}
+
+	return out;
+}
+
+string measure_class2(FHEPubKey pubKey, int peers) {
+
+	string out = "";
+	for(int j = 0; j < 3; j++) {
+		out += "\n";
+		double recryptThreshold = 70.0;
+		double firstL = 0.0;
+		double secondL = 0.0;
+		Ctxt c2(pubKey);
+		pubKey.Encrypt(c2, to_ZZX((rand() % 1000)));
+
+		Ctxt c1(pubKey);
+		pubKey.Encrypt(c1, to_ZZX(1));
+
+		int i = peers;
+		double t = 0.0;
+
+		while(i > 0) {
+			t -= GetTime();
+			c2.addCtxt(c1);
+			t += GetTime();
+			i--;
+		}
+
+		t -= GetTime();
+		c2.multiplyBy(c1);
+		t += GetTime();
+
+		out += "class2\t" +
+			to_string(peers) + "\t" +
+			to_string(t);
+	}
+
+	return out;
+}
+
+string measure_var(FHEPubKey pubKey, int peers) {
+
+	string out = "";
+	for(int j = 0; j < 3; j++) {
+		out += "\n";
+	double recryptThreshold = 70.0;
+	double firstL = 0.0;
+	double secondL = 0.0;
+	double thirdL = 0.0;
+
+	Ctxt c2(pubKey);
+	pubKey.Encrypt(c2, to_ZZX(2));
+
+	Ctxt c1(pubKey);
+	pubKey.Encrypt(c1, to_ZZX(1));
+
+	Ctxt c3(pubKey);
+	pubKey.Encrypt(c1, to_ZZX(0));
+
+	int i = peers;
+	double t = 0.0;
+	double bootstrap_t = 0.0;
+	int bootstrapCount = 0;
+	while(i > 0) {
+		firstL = -c1.log_of_ratio()/log(2.0);
+		secondL = -c2.log_of_ratio()/log(2.0);
+		thirdL = -c3.log_of_ratio()/log(2.0);
+
+		if(firstL < $levelThreshold$) {
+			bootstrap_t -= GetTime();
+			pubKey.thinReCrypt(c1);
+			bootstrap_t += GetTime();
+			bootstrapCount += 1;
+		}
+		if(secondL < $levelThreshold$) {
+			bootstrap_t -= GetTime();
+			pubKey.thinReCrypt(c2);
+			bootstrap_t += GetTime();
+			bootstrapCount += 1;
+		}
+		if(thirdL < $levelThreshold$) {
+			bootstrap_t -= GetTime();
+			pubKey.thinReCrypt(c3);
+			bootstrap_t += GetTime();
+			bootstrapCount += 1;
+		}
+		t -= GetTime();
+		c2.addCtxt(c1, true);
+		c2.multiplyBy(c2);
+		c3.addCtxt(c2);
+		t += GetTime();
+		i--;
+	}
+
+	out += "var\t" +
+		to_string(peers) + "\t" +
+		to_string(bootstrapCount) + "\t" +
+		to_string(bootstrap_t) + "\t" +
+		to_string(t);
+	}
+
+	return out;
+}
+
+FHEcontext read_context_from_file(string filename) {
+	cout << "Reading context from file " << filename << endl;
+	ifstream myfile;
+	myfile.open(filename, ios::binary);
+	readContextBaseBinary(myfile, m, p, r, gens, ords);
+	FHEcontext context(m, p, r, gens, ords);
+	readContextBinary(myfile, context);
+	myfile.close();
+	cout << "Done." << endl;
+	return context;
+}
+
+FHEPubKey read_public_key_from_file(FHEcontext* context, string filename) {
+	cout << "Reading public key from " << filename << "... " << endl;
+	ifstream myfile;
+	//myfile.open(filename, ios::binary);
+	myfile.open(filename);
+	FHEPubKey pubKey((*context));
+	//readPubKeyBinary(myfile, pubKey);
+	myfile >\> pubKey;
+	myfile.close();
+	cout << "Done." << endl;
+
+	return pubKey;
+}
+
+void print_context_info(FHEcontext* context, ZZX G) {
+	context->zMStar.printout();
+    cout << endl;
+
+    cout << "security=" << context->securityLevel() << endl;
+    cout << "# ctxt primes = " << context->ctxtPrimes.card() << "\n";
+    cout << "# bits in ctxt primes = "
+        << long(context->logOfProduct(context->ctxtPrimes) / log(2.0) + 0.5) << "\n";
+    cout << "# special primes = " << context->specialPrimes.card() << "\n";
+    cout << "# bits in special primes = "
+        << long(context->logOfProduct(context->specialPrimes) / log(2.0) + 0.5) << "\n";
+    cout << "G = " << G << "\n";
+}
+
+void convert_string_to_ctxt(string value, Ctxt& ctxt) {
+    stringstream ss(value);
+    ss >\> ctxt;
+    ss.flush();
+}
+
+void convert_ctxt_to_string(Ctxt& ctxt, string& target_string) {
+	cout << "Converting ctxt to string ... " << endl;
+    stringstream ss;
+    ss << ctxt;
+    target_string = ss.str();
+    cout << "Done." << endl;
+}
+
+>>
+input_param(x) ::= "int $x$"
+ciphertext_declaration(c) ::= "$c$(publicKey)"
+declare_vars(x) ::= "int $x$ = 1;$\n$"
+extract_list(x, i) ::= "$x$ = values.at($i$);$\n$"
+convert_string_ctxts(c, i) ::= "cout << \"Converting $c$...\" << endl; convert_string_to_ctxt(string_ctxts.at($i$-1), $c$);"
+init_constants(constant_name, value) ::= "Ctxt $constant_name$(publicKey); publicKey.Encrypt($constant_name$, to_ZZX($value$));"

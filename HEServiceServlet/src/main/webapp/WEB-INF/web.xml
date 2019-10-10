@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app 
+    xmlns="http://java.sun.com/xml/ns/javaee"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
+    version="3.0">
+
+    <display-name>HE Service App</display-name>
+
+    <servlet>
+        <servlet-name>MainServlet</servlet-name>
+        <servlet-class>thesis.servlets.MainServlet</servlet-class>
+    </servlet>
+    
+    <servlet>
+    	<servlet-name>ClientDistributionServlet</servlet-name>
+        <servlet-class>thesis.servlets.ClientDistributionServlet</servlet-class>
+    </servlet>
+    
+    
+     <servlet-mapping>
+        <servlet-name>ClientDistributionServlet</servlet-name>
+        <url-pattern>/get_client</url-pattern>
+    </servlet-mapping>
+</web-app>

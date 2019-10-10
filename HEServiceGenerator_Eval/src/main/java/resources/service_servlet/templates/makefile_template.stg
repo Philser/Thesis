@@ -1,0 +1,10 @@
+make_file(service_name, native_interface_lib_name, pubkey_filename, context_filename, native_code_dirname, tomcat_webapps_path) ::=
+<<
+maven:
+	unzip -u -o servlet.zip
+	mkdir -p src/main/java/resources/$native_code_dirname$/
+	cp ../native_code/$native_interface_lib_name$ src/main/java/resources/$native_code_dirname$/
+	rm -r -f /root/.m2/repository
+	mvn clean install -q -Djavax.net.ssl.trustStorePassword=changeit -DskipTests
+	cp target/$service_name$.war $tomcat_webapps_path$
+>>

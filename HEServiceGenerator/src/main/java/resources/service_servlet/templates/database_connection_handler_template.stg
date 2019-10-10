@@ -1,0 +1,323 @@
+db_handler(url, user, password, globalScheme, servicesTableName, serviceName)::= <<
+package database;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+
+public class DatabaseConnectionHandler {
+
+	//TODO Create Table(s) script
+	//TODO Create db for service
+
+	//Database URI and credentials
+	private static final String DB_URL = "$url$";
+	private static final String USER = "$user$";
+	private static final String PASSWORD = "$password$";
+	private static final String globalScheme = "$globalScheme$";
+
+	private static final int MAX_TRIES = 1;
+
+	private boolean debugActive = false;
+	private String schemaName = "";
+
+	public DatabaseConnectionHandler(String schemaName, boolean debugActive) {
+		this.debugActive = debugActive;
+		this.schemaName = schemaName;
+	}
+
+	public Connection openConnection() throws SQLException, ClassNotFoundException {
+		Class.forName("org.postgresql.Driver");
+		Connection connection = null;
+
+		int tryCounter = 0;
+		while(tryCounter <= MAX_TRIES) {
+			try {
+				connection = DriverManager.getConnection(DB_URL, USER, PASSWORD);
+				break;
+			} catch (SQLException e) {
+				//Auto-generated catch block
+				if (tryCounter == MAX_TRIES)
+					throw new SQLException("Not able to connect to database. Reason: " + e.getMessage());
+				else
+					tryCounter++;
+			}
+		}
+		return connection;
+	}
+
+	public void closeConnection(Connection connection) throws SQLException {
+		if(connection == null)
+			return;
+
+		int tryCounter = 0;
+		while(tryCounter <= MAX_TRIES) {
+			try {
+				connection.close();
+				break;
+			} catch (SQLException e) {
+				//Auto-generated catch block
+				if (tryCounter == MAX_TRIES)
+					throw new SQLException("Not able to close database connection.");
+				else
+					tryCounter++;
+			}
+		}
+	}
+
+	public boolean getIsBootstrappable() throws SQLException {
+		String query = "SELECT needs_bootstrapping FROM " + this.globalScheme + ".$servicesTableName$ WHERE service_name='" + "$serviceName$" + "';";
+		ResultSet result = queryTable(query);
+		if(result.next()) {
+				return result.getBoolean(1);
+		}
+
+		return false;
+	}
+
+	public List<String> getPeerGroupsForPeer(String peerId) throws SQLException {
+		String query = "SELECT DISTINCT peer_group_id FROM "  + this.globalScheme + ".peer_group_peer WHERE peer_id = '" + peerId + "';";
+		ResultSet queryResult = queryTable(query);
+
+		//Extract objects
+		List<String> resultList = new ArrayList<String>();
+		try {
+			while (queryResult.next()) {
+				resultList.add(queryResult.getString("peer_group_id"));
+			}
+		} catch (SQLException e) {
+			//Auto-generated catch block
+			throw new SQLException("Error related to sqlResult of type ResultSet: " + e.getMessage());
+		}
+
+		return resultList;
+	}
+
+	private ResultSet insertIntoTable(String query) throws SQLException {
+		return queryTable(query, true);
+	}
+
+	private ResultSet queryTable(String query) throws SQLException {
+		return queryTable(query, false);
+	}
+
+	private ResultSet queryTable(String query, boolean insert) throws SQLException {
+		return queryTable(query, insert, true);
+	}
+
+	private ResultSet queryTable(String query, boolean insert, boolean debugMessagesActive) throws SQLException {
+		ResultSet queryResult = null;
+
+		int tryCounter = 0;
+		Connection connection = null;
+		while(tryCounter <= MAX_TRIES) {
+			try {
+				connection = openConnection();
+				Statement statement = connection.createStatement();
+				if(insert)
+					execUpdate(query, statement, debugMessagesActive);
+				else
+					queryResult = execQuery(query, statement, debugMessagesActive);
+				break;
+			} catch (SQLException e) {
+				if (tryCounter == MAX_TRIES)
+					throw new SQLException("Not able to execute sql query: " + query + ". Reason: " + e.getMessage());
+				else
+					tryCounter++;
+			} catch(ClassNotFoundException cnfe) {
+				throw new SQLException("Not able to execute sql query: PGSQL Driver not found");
+			}
+			finally {
+				closeConnection(connection);
+			}
+		}
+
+		return queryResult;
+	}
+
+	public String createRun(String peerGroupId) throws SQLException {
+		// Create run
+		String runId = createRunEntry(peerGroupId);
+
+		//Create run_result with empty result
+		createRunStatus(runId); //TODO Magic numbers
+
+		return runId;
+	}
+
+	private void createRunStatus(String runId) throws SQLException {
+		String query = "INSERT INTO " + this.schemaName + ".run_status VALUES (" + runId + ", 0)"; // 0 == Waiting for values, 1 == Calculating, 2 == Done
+		insertIntoTable(query);
+	}
+
+	private String createRunEntry(String peerGroupId) throws SQLException {
+		String query = "INSERT INTO " + this.schemaName + ".run (peer_group_id) VALUES(" + peerGroupId + ");";
+		String runId = "";
+
+		int tryCounter = 0;
+		Connection connection = null;
+		while(tryCounter <= MAX_TRIES) {
+			try {
+				connection = openConnection();
+				Statement statement = connection.createStatement();
+				execUpdate(query, statement);
+				ResultSet generatedKeys = statement.getGeneratedKeys();
+				if(generatedKeys.next())
+					runId = Integer.toString(generatedKeys.getInt(1)); //Retrieve ID
+				break;
+			} catch (SQLException e) {
+				if (tryCounter == MAX_TRIES)
+					throw new SQLException("Not able to execute sql query: " + query + ". Reason: " + e.getMessage());
+				else
+					tryCounter++;
+			}
+			catch(ClassNotFoundException cnfe) {
+				throw new SQLException("Not able to execute sql query: PGSQL Driver not found");
+			}
+			finally {
+				closeConnection(connection);
+			}
+		}
+
+		return runId;
+	}
+
+
+	public void insertRunValue(String runId, String peerId, String varName, String value) throws SQLException {
+		String tableName = "run_value";
+
+		String query = "INSERT INTO " + this.schemaName + "." + tableName
+				+ " VALUES ("
+				+ "'" + runId + "', "
+				+ "'" + peerId + "', "
+				+ "'" + varName + "', "
+				+ "'" + value + "');";
+
+		int tryCounter = 0;
+		Connection conn = null;
+		while(tryCounter <= MAX_TRIES) {
+			try {
+				conn = openConnection();
+				Statement statement = conn.createStatement();
+				execUpdate(query, statement, false);
+				break;
+			} catch (SQLException e) {
+				if (tryCounter == MAX_TRIES)
+					throw new SQLException("Not able to execute sql query: " + query + ". Reason: " + e.getMessage());
+				else
+					tryCounter++;
+			}
+			catch(ClassNotFoundException cnfe) {
+				throw new SQLException("Not able to execute sql query: PGSQL Driver not found");
+			}
+			finally {
+				closeConnection(conn);
+			}
+		}
+	}
+
+	private ResultSet execQuery(String query, Statement statement) throws SQLException {
+		return execQuery(query, statement, true);
+	}
+
+	private ResultSet execQuery(String query, Statement statement, boolean enableDebugMessages) throws SQLException {
+		if(enableDebugMessages)
+			System.out.println("Executing query: " + query);
+		ResultSet result = statement.executeQuery(query);
+		return result;
+	}
+
+	private void execUpdate(String query, Statement statement) throws SQLException {
+		execUpdate(query, statement, debugActive);
+	}
+
+	private void execUpdate(String query, Statement statement, boolean enableDebugMessages) throws SQLException {
+		if(enableDebugMessages)
+			System.out.println("Executing query: " + query);
+		statement.executeUpdate(query, Statement.RETURN_GENERATED_KEYS);
+	}
+
+	public boolean runExists(String runId) throws SQLException {
+		String query = "SELECT COUNT(*) FROM " + this.schemaName + ".run WHERE run_id='" + runId + "';";
+		ResultSet result = queryTable(query);
+		if(result.next()) {
+			if(result.getInt(1) > 0)
+				return true;
+		}
+
+		return false;
+	}
+
+	public int getVarCountForRun(String runId) throws SQLException {
+		String query = "SELECT DISTINCT COUNT(var_name) FROM " + this.schemaName + ".run_value WHERE run_id='" + runId + "';";
+		ResultSet result = queryTable(query);
+		if(result.next()) {
+				return result.getInt(1);
+		}
+
+		return 0;
+	}
+
+	public ResultSet getRuns() throws SQLException {
+		String query = "SELECT run_id, peer_group_id FROM " + this.schemaName + ".run;";
+		ResultSet result = queryTable(query);
+		return result;
+	}
+
+	public ResultSet getClientValuesForRun(String runId) throws SQLException {
+		String query = "SELECT var_name, value FROM " + this.schemaName + ".run_value WHERE run_id='" + runId + "';";
+		ResultSet result = queryTable(query);
+		return result;
+	}
+
+	public ResultSet getStatusForRun(String runId) throws SQLException {
+		String query = "SELECT status FROM " + this.schemaName + ".run_status WHERE run_id='" + runId + "';";
+		ResultSet result = queryTable(query);
+		return result;
+	}
+
+	public void setStatusForRun(String runId, int status) throws SQLException {
+		String query = "UPDATE " + this.schemaName + ".run_status SET status=" + status + " WHERE run_id = '" + runId + "';";
+		queryTable(query, true);
+	}
+
+	public void storeRunResult(String runId, String result) throws SQLException {
+		String query = "INSERT INTO " + this.schemaName + ".run_result VALUES (" + runId + ", '" + result + "');";
+		queryTable(query, true, false);
+	}
+
+	public ResultSet getRunResult(String runId) throws SQLException {
+		String query = "SELECT result FROM " + this.schemaName + ".run_result WHERE run_id='" + runId + "';";
+		return queryTable(query);
+	}
+
+	public boolean runValueExists(String runId, String peerId, String varName) throws SQLException {
+		String query = "SELECT COUNT(*) FROM " + this.schemaName + ".run WHERE run_id='" + runId + "';";
+		ResultSet result = queryTable(query);
+		if(result.next()) {
+			if(result.getInt(1) > 0)
+				return true;
+		}
+
+		return false;
+	}
+
+	public boolean peerGroupExists(String peerGroupId) throws SQLException {
+		String query = "SELECT EXISTS(SELECT 1 FROM " + this.globalScheme + ".peer_group WHERE peer_group_id='" + peerGroupId + "');";
+		ResultSet result = queryTable(query);
+		if(result.next()) {
+			if(result.getBoolean(1))
+				return true;
+		}
+
+		return false;
+	}
+}
+
+
+>>

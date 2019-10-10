@@ -1,0 +1,7 @@
+---
+applications:
+- name: javaservice
+  memory: 1024M
+  instances: 1
+  host: javaservice
+  path: target/hello-java.war

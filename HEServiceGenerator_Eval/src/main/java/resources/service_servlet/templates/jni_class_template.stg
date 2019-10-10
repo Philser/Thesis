@@ -1,0 +1,14 @@
+interface(path_to_lib)::= <<
+package jni;
+
+
+public class HECodeInterface {
+
+	static {
+		System.load("$path_to_lib$");
+	}
+
+	public native String calculate(String[] values);
+
+}
+>>
